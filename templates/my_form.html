@@ -77,6 +77,7 @@ Selenzyme: Enzyme Selection Tool</h1>
 		 Maximum number of hits: <input type="number" name="targets" value="50"/> <br/>
 		<input type="checkbox" name="direction"/> Use only consensus reaction direction.<br/>
 		<input type="checkbox" name="noMSA" checked/> No MSA (faster). <br/>
+		<input type="checkbox" name="theia" /> Enable Theia EC Number Prediction. <br/>
 		Host organism: <select name="host" id="host">
 		  <option value="83333">Escherichia coli K-12</option>
 		  <option value="4932">Saccharomyces cerevisiae</option>
@@ -126,6 +127,7 @@ Selenzyme: Enzyme Selection Tool</h1>
 		  <ul>
 		    <li> <b>Hits:</b> Number of hits to show.</li>
 		    <li> <b>MSA:</b> Perform multiple sequence alignment and compute conservation score.</li>
+		    <li> <b>Theia:</b> Enable additional scoring based on Theia EC Number predictions.</li>
 		    <li> <b>Host organism:</b> Compute phylogenetic distance of source organisms to selected host.</li>
 		    <li> <b>Similarity:</b> Select method for reaction similarity (see about <a href="http://rdkit.readthedocs.io/en/latest/GettingStartedInPython.html" target="_blank">fingerprints</a>).</li>
 		    </ul>
@@ -184,6 +186,14 @@ Selenzyme: Enzyme Selection Tool</h1>
 			</td>
 			<td>
 			  Do not compute multiple sequence alignment (default: True).
+			</td>
+		      </tr>
+		      <tr>
+			<td>
+			  theia
+			</td>
+			<td>
+			  Enable additional scoring based on Theia EC Number predictions (default: False).
 			</td>
 		      </tr>
 		      <tr>
