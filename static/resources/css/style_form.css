@@ -1,5 +1,5 @@
 body            { font-family: "Lucida Sans Unicode", "Lucida Grande", sans-serif; font-size: 12px;}
-a, h1, h2       { color: ##151515; }
+a, h1, h2       { color: #151515; }
 h1, h2          { margin: 5; }
 h1              { border-bottom: 2px solid #eee; }
 
@@ -37,7 +37,7 @@ h1              { border-bottom: 2px solid #eee; }
 }
 .info {
     width: 600px;
-    max-wdith: 600px;
+    max-width: 600px;
     display: inline-block;
 }
 .rquery {
