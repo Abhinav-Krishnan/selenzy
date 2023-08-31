@@ -38,7 +38,7 @@ def fingerprint():
 def loadFingerprint(datadir, fpid):
     fpi = fingerprint()[fpid]
     fpfile = os.path.join(datadir, fpi[0]+'.npz')
-    data = np.load(fpfile)
+    data = np.load(fpfile, allow_pickle=True)
     fp = data['x']
     fpn = data['y']
     fpparam = fpi[1]
