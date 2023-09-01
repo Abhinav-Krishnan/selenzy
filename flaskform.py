@@ -13,7 +13,7 @@ import Selenzy
 from flask import Flask, flash, render_template, request, redirect, url_for, send_from_directory, jsonify
 from flask_restful import Resource, Api
 from flask import session
-from werkzeug import secure_filename
+from werkzeug.utils import secure_filename
 import pandas as pd
 import numpy as np
 
@@ -73,9 +73,10 @@ def init_session():
     session['uniquefolder'] = uniquefolder
     session['rxnifo'] = None
     session['status'] = False
+    session['theia']  = False
     session['username'] = session['uniqueid']
     # Restart the Score for each new session
-    session['SCORE'] = Selenzy.seqScore()
+    session['SCORE'] = Selenzy.seqScore(theia=session['theia'])
 
 
 def reset_session():
@@ -84,7 +85,7 @@ def reset_session():
     app.logger.info( 'New session: %s' % (uniqueid,) )
     session['uniqueid'] = uniqueid
 
-def run_session(rxntype, rxninfo, targets, direction, host, fp, noMSA):
+def run_session(rxntype, rxninfo, targets, direction, host, fp, noMSA, theia):
     global session
     uniqueid = session['uniqueid']
     uniquefolder = session['uniquefolder']
@@ -99,7 +100,8 @@ def run_session(rxntype, rxninfo, targets, direction, host, fp, noMSA):
                                                     host = host,
                                                     fp = fp,
                                                     NoMSA = noMSA,
-                                                    pc = app.config['TABLES']
+                                                    pc = app.config['TABLES'],
+                                                    theia = theia
     ) # this creates CSV file in Uploads directory
     if success:
         data = Selenzy.updateScore(file_path(uniqueid, csvfile), session['SCORE'])
@@ -190,6 +192,11 @@ class RestQuery(Resource):
                 noMSA = args['noMSA']
             else:
                 noMSA = True
+            if 'theia' in args:
+                theia = args['theia']
+            else:
+                theia = False
+            session['theia'] = theia
             if 'host' in args:
                 host = args['host']
             else:
@@ -199,16 +206,18 @@ class RestQuery(Resource):
             else:
                 fp = 'RDK'
             if 'score' in args:
-                session['SCORE'] = Selenzy.seqScore(args['score'])
+                session['SCORE'] = Selenzy.seqScore(args['score'], theia=session['theia'])
+            else:
+                session['SCORE'] = Selenzy.seqScore(session['SCORE'], theia=session['theia'])
             try:
                 if isinstance(rxninfo, (list, tuple) ):
                     data = []
                     for instance in rnxinfo:
-                        dat, csvfile, sessionid = run_session(rxntype, instance, targets, direction, host, fp, noMSA)
+                        dat, csvfile, sessionid = run_session(rxntype, instance, targets, direction, host, fp, noMSA, theia)
                         data.append(dat)
                     data = pd.DataFrame(data)
                 else:
-                    data, csvfile, sessionid = run_session(rxntype, rxninfo, targets, direction, host, fp, noMSA)
+                    data, csvfile, sessionid = run_session(rxntype, rxninfo, targets, direction, host, fp, noMSA, theia)
                 return jsonify({'app': 'Selenzy', 'version': '1.0', 'author': 'Synbiochem', 'data': data.to_json()})
             except:
                 return jsonify({'app': 'Selenzy', 'version': '1.0', 'author': 'Synbiochem', 'data': None})
@@ -484,7 +493,7 @@ def score_table():
         sessid = json.loads(request.values.get('session'))
         csvname = os.path.basename(json.loads(request.values.get('csv')))
         csvfile = os.path.join(app.config['UPLOAD_FOLDER'], sessid, csvname)
-        session['SCORE'] = Selenzy.seqScore(score)
+        session['SCORE'] = Selenzy.seqScore(score, theia=session['theia'])
         data = Selenzy.updateScore(csvfile, session['SCORE'])
         return json.dumps( {'data': {'csv':  data.to_html()}} )
 
@@ -523,6 +532,7 @@ def upload_file():
 
         direction = 0
         noMSA = False
+        theia = False
         targets = request.form['targets']
         host = request.form['host']
         fp = request.form['finger']
@@ -530,8 +540,12 @@ def upload_file():
             direction = 1
         if request.form.get('noMSA'):
             noMSA = True
+        if request.form.get('theia'):
+            theia = True
+        session['theia'] = theia
+        session['SCORE'] = Selenzy.seqScore(session['SCORE'], theia=session['theia'])
         try:
-            data, csvfile, sessionid = run_session(rxntype, rxninfo, targets, direction, host, fp, noMSA)
+            data, csvfile, sessionid = run_session(rxntype, rxninfo, targets, direction, host, fp, noMSA, theia)
             return render_template('results.html', tables=data.to_html(), csvfile=csvfile, sessionid=sessionid, flags={'fasta': True, 'msa': not noMSA}, score=session['SCORE'])
         except:
             return redirect( url_for("upload_form") )
@@ -552,6 +566,9 @@ def upload_file():
             fp = request.args.get('fp')
             if fp is None:
                 fp = 'RDK'
+            theia = request.args.get('theia')
+            if theia is None:
+                theia = False
             rxntype = 'smarts'
             rxninfo = smarts
             direction = 0
@@ -559,8 +576,10 @@ def upload_file():
             targets = 20
             session['rxninfo'] = rxninfo
             session['rxntype'] = rxntype
+            session['theia']   = theia
+            session['SCORE']   = Selenzy.seqScore(session['SCORE'], theia=session['theia'])
             try:
-                data, csvfile, sessionid = run_session(rxntype, rxninfo, targets, direction, host, fp, noMSA)
+                data, csvfile, sessionid = run_session(rxntype, rxninfo, targets, direction, host, fp, noMSA, theia)
                 return render_template('results.html', tables=data.to_html(), csvfile=csvfile, sessionid=sessionid,
                                        flags={'fasta': True, 'msa': not noMSA}, score=session['SCORE'])
             except:
@@ -577,9 +596,9 @@ if __name__== "__main__":  #only run server if file is called directly
     arg = arguments()
     
 
-    app.config['UPLOAD_FOLDER'] = os.path.abspath(arg.uploaddir)
-    app.config['LOG_FOLDER'] = os.path.abspath(arg.logdir)
-    app.config['DATA_FOLDER'] = os.path.abspath(arg.datadir)
+    app.config['UPLOAD_FOLDER'] = os.path.join(arg.uploaddir)
+    app.config['LOG_FOLDER'] = os.path.join(arg.logdir)
+    app.config['DATA_FOLDER'] = os.path.join(arg.datadir)
 
     if arg.d:
         app.config['DEBUG'] = True
