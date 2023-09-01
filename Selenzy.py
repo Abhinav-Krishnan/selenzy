@@ -195,26 +195,44 @@ def taxDistance(tax, host, target):
         distance = 1 + len(hostLineage ^ targetLineage)
         return distance
     else:
-        return '-'
+        return float('inf')
 
-def seqScore(newscore=None):
+def seqScore(newscore=None, theia=False):
     import string
+    
     # Initial score
-    vdict = {
-        string.ascii_uppercase[9]: ('Reaction similarity:', 100.0, True),
-        string.ascii_uppercase[8]: ('Sequence <a href="https://en.wikipedia.org/wiki/Conserved_sequence" target="_blank">conservation</a>:', 1.0, True),
-        string.ascii_uppercase[4]: ('Sequence <a href="https://www.ncbi.nlm.nih.gov/taxonomy" target="_blank">taxonomic</a> distance:', -1.0, True),
-        string.ascii_uppercase[7]: ('Uniprot <a href="http://www.uniprot.org/help/protein_existence" target="_blank">protein evidence</a>:', -0.1, True),
-        string.ascii_uppercase[12]: ('Percentage helices:', 0.0, False),
-        string.ascii_uppercase[13]: ('Percentage sheets:', 0.0, False),
-        string.ascii_uppercase[14]: ('Percentage turns:', 0.0, False),
-        string.ascii_uppercase[15]: ('Molecular weight:', 0.0, False),
-        string.ascii_uppercase[16]: ('Isoelectric point:', 0.0, False),
-        string.ascii_uppercase[17]: ('Percentage polar amino acids:', 0.0, False)
-    }
+    if theia:
+        vdict = {
+            string.ascii_uppercase[9]: ('Reaction similarity:', 50.0, True),
+            string.ascii_uppercase[11]: ('EC Digits Matched:', 16.67, True),
+            string.ascii_uppercase[8]: ('Sequence <a href="https://en.wikipedia.org/wiki/Conserved_sequence" target="_blank">conservation</a>:', 1.0, True),
+            string.ascii_uppercase[4]: ('Sequence <a href="https://www.ncbi.nlm.nih.gov/taxonomy" target="_blank">taxonomic</a> distance:', -1.0, True),
+            string.ascii_uppercase[7]: ('Uniprot <a href="http://www.uniprot.org/help/protein_existence" target="_blank">protein evidence</a>:', -0.1, True),
+            string.ascii_uppercase[13]: ('Percentage helices:', 0.0, False),
+            string.ascii_uppercase[14]: ('Percentage sheets:', 0.0, False),
+            string.ascii_uppercase[15]: ('Percentage turns:', 0.0, False),
+            string.ascii_uppercase[17]: ('Molecular weight:', 0.0, False),
+            string.ascii_uppercase[18]: ('Isoelectric point:', 0.0, False),
+            string.ascii_uppercase[19]: ('Percentage polar amino acids:', 0.0, False)
+        }
+    else:
+        vdict = {
+            string.ascii_uppercase[9]: ('Reaction similarity:', 100.0, True),
+            string.ascii_uppercase[11]: ('EC Digits Matched:', 0.0, False),
+            string.ascii_uppercase[8]: ('Sequence <a href="https://en.wikipedia.org/wiki/Conserved_sequence" target="_blank">conservation</a>:', 1.0, True),
+            string.ascii_uppercase[4]: ('Sequence <a href="https://www.ncbi.nlm.nih.gov/taxonomy" target="_blank">taxonomic</a> distance:', -1.0, True),
+            string.ascii_uppercase[7]: ('Uniprot <a href="http://www.uniprot.org/help/protein_existence" target="_blank">protein evidence</a>:', -0.1, True),
+            string.ascii_uppercase[13]: ('Percentage helices:', 0.0, False),
+            string.ascii_uppercase[14]: ('Percentage sheets:', 0.0, False),
+            string.ascii_uppercase[15]: ('Percentage turns:', 0.0, False),
+            string.ascii_uppercase[17]: ('Molecular weight:', 0.0, False),
+            string.ascii_uppercase[18]: ('Isoelectric point:', 0.0, False),
+            string.ascii_uppercase[19]: ('Percentage polar amino acids:', 0.0, False)
+        }
+
     nvdict = vdict.copy()
     # Reference order (alternatively, perhaps easier to keep table order)
-    clist = [string.ascii_uppercase[x] for x in [9,8,4,7,12,13,14,15,16,17]]
+    clist = [string.ascii_uppercase[x] for x in [9,11,8,4,7,13,14,15,17,18,19]]
     # Update score if given and well-formed
     update = False
     if newscore is not None:
@@ -528,7 +546,7 @@ def noAmbiguousSeqs(infile, outfile):
     from Bio import SeqIO
     from Bio.Seq import Seq
     from Bio.SeqRecord import SeqRecord
-    from Bio.Alphabet import generic_protein
+    # from Bio.Alphabet import generic_protein
 
     newrecords = []
     for record in SeqIO.parse(infile, "fasta"):
@@ -806,7 +824,65 @@ def conservation_properties(fastaFile):
     cons = doMSA(fastaFile,  os.path.dirname(fastaFile))
     return cons
 
-def analyse(rxnInput, targ, datadir, outdir, csvfilename, pdir=0, host='83333', NoMSA=False, pc=None, fp='RDK'):
+def calcEcScore(Smiles, Keys, EcNumber):
+    from itertools import product
+    
+    ecScores = dict.fromkeys(Keys, 0)   # Initialise ecScores dictionary
+    reactECs = []
+
+    # Run Theia and capture EC number predictions
+    while True:
+        try:
+            theiaOut = subprocess.run(["theia-cli", "ecreact.ec123", Smiles, "--probs"], capture_output=True, text=True, timeout=30.0)
+        except subprocess.TimeoutExpired:
+            pass
+        else:
+            break
+    
+    # Print captured predictions and split into individual EC numbers
+    print(f"Predcitions: {(theiaOut.stdout).split(';')}", end='')
+    pred1, pred2, pred3, pred4, pred5 = (theiaOut.stdout).split(';')
+    pred1, _ = pred1.split(',')
+    pred2, _ = pred2.split(',')
+    pred3, _ = pred3.split(',')
+    pred4, _ = pred4.split(',')
+    pred5, _ = pred5.split(',')
+    predECs  = [pred1, pred2, pred3, pred4, pred5]
+
+    # Iterate through database and store how many match predictions
+    for Mnx in EcNumber:
+        if ';' not in EcNumber[Mnx]:
+            reactECs = [EcNumber[Mnx]]
+        else:
+            reactECs = EcNumber[Mnx].split(';')
+
+        for reactEC, predEC in product(reactECs, predECs):
+            reactECSplit = reactEC.split('.')
+            predECSplit  = predEC.split('.')
+
+            if reactECSplit[0] != predECSplit[0]:
+                continue
+            elif (len(reactECSplit) < 2) or (reactECSplit[1] != predECSplit[1]):
+                if ecScores[Mnx] < 1:   ecScores[Mnx] = 1
+                continue
+            elif (len(reactECSplit) < 3) or (reactECSplit[2] != predECSplit[2]):
+                if ecScores[Mnx] < 2:   ecScores[Mnx] = 2
+                continue
+            else:
+                ecScores[Mnx] = 3
+                break
+    
+    return ecScores
+
+
+def weightedSumSort(rows):
+    rxnsim  = rows[8]   # Reaction Similarity Score
+    ecMatch = rows[10]  # EC Digits Matched Score
+
+    return (rxnsim + (ecMatch / 3)) * 0.5
+
+
+def analyse(rxnInput, targ, datadir, outdir, csvfilename, pdir=0, host='83333', NoMSA=False, pc=None, fp='RDK', theia=False):
     
 
     datadir = os.path.join(datadir)
@@ -842,6 +918,11 @@ def analyse(rxnInput, targ, datadir, outdir, csvfilename, pdir=0, host='83333', 
     upclst = pc.upclst
     clstrep = pc.clstrep
     smir = pc.smir
+
+    # Run calcEcScore if Theia flag is True
+    if theia:
+        print("Generating Theia Predictions...")
+        ecScores = calcEcScore(Smiles, MnxSim.keys(), EcNumber)
 
     list_mnx = sorted(MnxSim, key=MnxSim.__getitem__, reverse=True)  #allow user to manipulate window of initial rxn id list
     print ("Creating initial MNX list...")
@@ -947,18 +1028,29 @@ def analyse(rxnInput, targ, datadir, outdir, csvfilename, pdir=0, host='83333', 
                 if y in seqorg:
                     tdist[org] = taxDistance(tax, host, seqorg[y][0])
                 else:
-                    tdist[org] = '-'
+                    tdist[org] = float('inf')
 
-            rows.append( (y, desc, org, tdist[org], mnx, ecid, ext, conservation, rxnsim, rxndirused, rxndirpref, h, e, t, c, w, i, pol, Smiles, mnxSmiles) )
+            if theia:
+                ecScore = ecScores[mnx]
+            else:
+                ecScore = '-'
+
+            rows.append( (y, desc, org, tdist[org], mnx, ecid, ext, conservation, rxnsim, rxndirused, ecScore, rxndirpref, h, e, t, c, w, i, pol, Smiles, mnxSmiles) )
 
        
         except KeyError:
             pass
-    sortrows = sort_rows(rows, (-10, -9, 4) )
+    
+    # Sort results using both scores if Theia flag is True
+    if theia:
+        sortrows = sorted(sort_rows(rows, (-10, -9, 4)), key=weightedSumSort, reverse=True)
+    else:
+        sortrows = sort_rows(rows, (-10, -9, 4))
+        
     updateMSA(outdir, sortrows)
 
     head = ('Seq. ID','Description', 'Organism Source', 'Tax. distance', 'Rxn. ID', 'EC Number', 'Uniprot protein evidence', 'Consv. Score',
-            'Rxn Sim.', "Direction Used", "Direction Preferred",
+            'Rxn Sim.', "Direction Used", 'EC Digits Matched', "Direction Preferred",
             '% helices', '% sheets', '% turns', '% coils', 'Mol. Weight', 'Isoelec. Point', 'Polar %','Query', 'Hit')
 
     write_csv(os.path.join(outdir, csvfilename), head, sortrows)
@@ -987,6 +1079,8 @@ def arguments():
                         help='Input is a reaction SMARTS string')
     parser.add_argument('-smartsfile', action='store_true',
                         help='Input is a reaction SMARTS file')
+    parser.add_argument('-theia', action='store_true',
+                        help='Enable additional scoring based on Theia EC Number predictions')
     parser.add_argument('-host', type=str, default='83333',
                         help='Host organism taxon id [default: E. coli]')
     arg = parser.parse_args()
@@ -1006,17 +1100,4 @@ if __name__ == '__main__':
     else:
         rxnInput = ['-rxn', arg.rxn]
 
-    analyse(rxnInput, arg.tar, arg.datadir, arg.outdir, arg.outfile, arg.d, arg.host, NoMSA=arg.NoMSA)
-
-
-
-
-
-
-
-
-
-
-
-
-
+    analyse(rxnInput, arg.tar, arg.datadir, arg.outdir, arg.outfile, arg.d, arg.host, NoMSA=arg.NoMSA, theia=arg.theia)
